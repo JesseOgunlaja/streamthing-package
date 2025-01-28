@@ -1,0 +1,19 @@
+{
+  "name": "streamthing",
+  "version": "1.0.0",
+  "description": "WebSocket platform for Node JS",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "WebSocket",
+    "streamthing"
+  ],
+  "author": "Jesse Ogunlaja",
+  "license": "ISC",
+  "dependencies": {
+    "crypto-js": "^4.2.0",
+    "socket.io-client": "^4.8.1"
+  }
+}

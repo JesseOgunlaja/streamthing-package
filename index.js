@@ -25,7 +25,8 @@ function decryptString(value, encryptionKey) {
 }
 
 const servers = {
-  us3: "https://streamthing-test-server-production.up.railway.app",
+  us3: "https://us3.streamthing.dev",
+  eus: "https://eus.streamthing.dev",
 };
 
 /**

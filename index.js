@@ -12,6 +12,16 @@ function hashString(value) {
 }
 
 /**
+ * Encrypts a value using AES encryption.
+ * @param {string} data - The value to encrypt.
+ * @param {string} encryptionKey - The encryption key.
+ * @returns {string} The encrypted value.
+ */
+function encryptValue(data, encryptionKey) {
+  return CryptoJS.AES.encrypt(JSON.stringify(data), encryptionKey).toString();
+}
+
+/**
  * Decrypts a string using AES decryption.
  * @param {string} value - The encrypted string to decrypt.
  * @param {string} encryptionKey - The encryption key used for decryption.
@@ -131,9 +141,8 @@ function createServerStream(config) {
         id,
         channel,
         event,
-        msg,
+        msg: encryptionKey ? encryptValue(msg, encryptionKey) : msg,
         password,
-        encryptionKey,
       }),
     });
     const data = await res.json();

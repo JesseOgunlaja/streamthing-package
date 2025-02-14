@@ -18,7 +18,10 @@ function hashString(value) {
  * @returns {string} The encrypted value.
  */
 function encryptValue(data, encryptionKey) {
-  return CryptoJS.AES.encrypt(JSON.stringify(data), encryptionKey).toString();
+  return CryptoJS.AES.encrypt(
+    JSON.stringify(data),
+    String(encryptionKey)
+  ).toString();
 }
 
 /**
@@ -55,21 +58,31 @@ const servers = {
 function createClientStream(config) {
   const { id, region, channel, password, encryptionKey } = config;
 
+  const ECDH = createECDH("secp256k1");
+  ECDH.generateKeys();
+  const publicKey = ECDH.getPublicKey("hex");
   const WEBSOCKET_URL = servers[region];
+
   const socket = io(WEBSOCKET_URL, {
-    transports: ["websocket"],
+    transports: ["websocket", "polling"],
     query: {
-      id,
       channel,
+      publicKey,
     },
   });
 
-  socket.emit("challenge", id);
-  socket.on("challenge-response", (challenge) => {
-    const challengeResult = createHmac("sha256", password)
-      .update(challenge)
-      .digest("hex");
-    socket.emit("authenticate", { id, channel, challenge: challengeResult });
+  socket.on("modulus-secret-server", (serverSecret) => {
+    const sharedKey = ECDH.computeSecret(serverSecret, "hex", "hex");
+    socket.emit("secret-id", encryptValue(id, sharedKey));
+  });
+  socket.on("auth", () => {
+    socket.emit("challenge", id);
+    socket.on("challenge-response", (challenge) => {
+      const challengeResult = createHmac("sha256", password)
+        .update(challenge)
+        .digest("hex");
+      socket.emit("authenticate", { id, channel, challenge: challengeResult });
+    });
   });
 
   socket.on("auth_error", (error) => {

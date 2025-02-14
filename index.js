@@ -1,4 +1,4 @@
-const { createHmac } = require("crypto");
+const { createHmac, createECDH } = require("crypto");
 const CryptoJS = require("crypto-js");
 const { io } = require("socket.io-client");
 

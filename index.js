@@ -1,40 +1,20 @@
-const { createHmac, createECDH } = require("crypto");
 const CryptoJS = require("crypto-js");
 const { io } = require("socket.io-client");
+const { SignJWT } = require("jose");
 
-/**
- * Hashes a string using SHA-256.
- * @param {string} value - The string to hash.
- * @returns {string} The hashed string.
- */
 function hashString(value) {
   return CryptoJS.SHA256(value).toString();
 }
 
-/**
- * Encrypts a value using AES encryption.
- * @param {string} data - The value to encrypt.
- * @param {string} encryptionKey - The encryption key.
- * @returns {string} The encrypted value.
- */
-function encryptValue(data, encryptionKey) {
-  return CryptoJS.AES.encrypt(
-    JSON.stringify(data),
-    String(encryptionKey)
-  ).toString();
-}
+async function encodeJWT(payload, secretKey, duration) {
+  const secret = new TextEncoder().encode(secretKey);
 
-/**
- * Decrypts a string using AES decryption.
- * @param {string} value - The encrypted string to decrypt.
- * @param {string} encryptionKey - The encryption key used for decryption.
- * @returns {*} The decrypted and parsed data.
- */
-function decryptString(value, encryptionKey) {
-  const decrypted = CryptoJS.AES.decrypt(value, encryptionKey).toString(
-    CryptoJS.enc.Utf8
-  );
-  return JSON.parse(decrypted);
+  const jwt = await new SignJWT(payload)
+    .setProtectedHeader({ alg: "HS256" })
+    .setExpirationTime(Math.floor(Date.now() / 1000) + duration)
+    .sign(secret);
+
+  return jwt;
 }
 
 const servers = {
@@ -43,75 +23,63 @@ const servers = {
 };
 
 /**
- * Creates a client stream for real-time communication.
- * @param {Object} config - Configuration object for the client stream.
- * @param {string} config.id - The unique identifier for the client.
- * @param {string} config.region - The region of the server to connect to.
+ * Creates a JWT token for authentication. ONLY TO BE USED ON THE SERVER.
+ * @param {Object} config - Configuration object for creating the token.
+ * @param {string} config.id - The unique identifier for the server.
  * @param {string} config.channel - The channel to join.
  * @param {string} config.password - The password for authentication.
- * @param {string} config.encryptionKey - The encryption key for decrypting messages.
- * @returns {{
+ * @param {string} config.socketID - The socket ID for authentication.
+ * @returns {Promise<string>} The JWT token.
+ */
+async function createToken({ id, channel, password, socketID }) {
+  if (typeof window !== "undefined") {
+    throw new Error("Can only create token on the server");
+  }
+  return await encodeJWT({ id, channel }, `${socketID}-${password}`, 5);
+}
+
+/**
+ * Creates a client stream for real-time communication.
+ * @param {string} region - The region of the server to connect to.
+ * @returns {Promise<{
+ *   id: string,
+ *   authenticate: (token: string) => void,
  *   receive: (event: string, callback: (data: unknown) => unknown) => void,
  *   disconnect: () => void
- * }} An object with methods to receive messages and disconnect.
+ * }>}
  */
-function createClientStream(config) {
-  const { id, region, channel, password, encryptionKey } = config;
+function createClientStream(region) {
+  return new Promise((resolve, reject) => {
+    const WEBSOCKET_URL = servers[region];
+    const socket = io(WEBSOCKET_URL, {
+      transports: ["websocket", "polling"],
+    });
 
-  const ECDH = createECDH("secp256k1");
-  ECDH.generateKeys();
-  const publicKey = ECDH.getPublicKey("hex");
-  const WEBSOCKET_URL = servers[region];
+    socket.on("connect", () => {
+      resolve({
+        id: socket.id,
+        authenticate(token) {
+          socket.emit("authenticate", token);
+        },
+        receive(event, callback) {
+          socket.on(hashString(event), callback);
+        },
+        disconnect() {
+          socket.disconnect();
+        },
+      });
+    });
 
-  const socket = io(WEBSOCKET_URL, {
-    transports: ["websocket", "polling"],
-    query: {
-      channel,
-      publicKey,
-    },
-  });
+    socket.on("auth_error", (error) => {
+      console.error(`Auth error: ${error.message}`);
+      reject(error);
+    });
 
-  socket.on("modulus-secret-server", (serverSecret) => {
-    const sharedKey = ECDH.computeSecret(serverSecret, "hex", "hex");
-    socket.emit("secret-id", encryptValue(id, sharedKey));
-  });
-  socket.on("auth", () => {
-    socket.emit("challenge", id);
-    socket.on("challenge-response", (challenge) => {
-      const challengeResult = createHmac("sha256", password)
-        .update(challenge)
-        .digest("hex");
-      socket.emit("authenticate", { id, channel, challenge: challengeResult });
+    socket.on("connect_error", (error) => {
+      console.error("Connection failed:", error.message);
+      reject(error);
     });
   });
-
-  socket.on("auth_error", (error) => {
-    console.error("Authentication failed:", error);
-  });
-
-  socket.on("connect_error", (error) => {
-    console.error("Connection failed:", error.message);
-  });
-
-  return {
-    /**
-     * Listens for messages on a specific event.
-     * @param {string} event - The event name to listen for.
-     * @param {Function} callback - The callback function to execute when the event is received.
-     */
-    receive(event, callback) {
-      socket.on(hashString(event), (data) => {
-        if (!encryptionKey) return callback(data);
-        callback(decryptString(data, encryptionKey));
-      });
-    },
-    /**
-     * Disconnects the client from the server.
-     */
-    disconnect() {
-      socket.disconnect();
-    },
-  };
 }
 
 /**
@@ -121,7 +89,6 @@ function createClientStream(config) {
  * @param {string} config.region - The region of the server to connect to.
  * @param {string} config.channel - The channel to join.
  * @param {string} config.password - The password for authentication.
- * @param {string} config.encryptionKey - The encryption key for encrypting messages.
  * @param {boolean} [config.receiving] - Whether the server should also receive messages.
  * @returns {{
  *   send: (event: string, msg: string) => Promise<void>,
@@ -135,7 +102,7 @@ function createServerStream(config) {
     throw new Error("Can only create server stream on the server");
   }
 
-  const { id, password, region, channel, encryptionKey } = config;
+  const { id, password, region, channel } = config;
   const WEBSOCKET_URL = servers[region];
 
   /**
@@ -154,7 +121,7 @@ function createServerStream(config) {
         id,
         channel,
         event,
-        msg: encryptionKey ? encryptValue(msg, encryptionKey) : msg,
+        msg,
         password,
       }),
     });
@@ -169,5 +136,6 @@ function createServerStream(config) {
 
 module.exports = {
   createClientStream,
+  createToken,
   createServerStream,
 };

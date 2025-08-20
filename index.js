@@ -12,7 +12,7 @@ async function encodeJWT(payload, secretKey, duration) {
 }
 
 const servers = {
-  usw: "ws://usw.streamthing.dev",
+  usw: "wss://usw.streamthing.dev",
   us3: "wss://us3.streamthing.dev",
   eus: "wss://eus.streamthing.dev",
 };

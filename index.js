@@ -12,7 +12,7 @@ async function encodeJWT(payload, secretKey, duration) {
 }
 
 const servers = {
-  usw: "wss://usw.streamthing.dev",
+  usw: "ws://usw.streamthing.dev",
   us3: "wss://us3.streamthing.dev",
   eus: "wss://eus.streamthing.dev",
 };
@@ -20,75 +20,60 @@ const servers = {
 /**
  * Creates a JWT token for authentication. ONLY TO BE USED ON THE SERVER.
  * @param {Object} config - Configuration object for creating the token.
- * @param {string} config.id - The unique identifier for the server.
  * @param {string} config.channel - The channel to join.
  * @param {string} config.password - The password for authentication.
- * @param {string} config.socketId - The socket ID for authentication.
  * @returns {Promise<string>} The JWT token.
  * @throws {Error} If called in a browser environment.
  */
-async function createToken({ id, channel, password, socketId }) {
+async function createToken({ channel, password }) {
   if (typeof window !== "undefined") {
     throw new Error("Can only create token on the server");
   }
 
-  return await encodeJWT({ id, channel }, `${socketId}-${password}`, 5);
+  return await encodeJWT({ channel }, password, 5);
 }
 
 /**
  * Creates a client stream for real-time communication.
- * @param {string} region - The region of the server to connect to.
+ * @param {Object} config - Configuration object for the client stream.
+ * @param {string} config.region - The region of the server to connect to.
+ * @param {string} config.id - The unique identifier for the server.
+ * @param {string} config.token - The authentication token.
  * @returns {Promise<{
- *   id: string,
- *   authenticate: (token: string) => void,
- *   send: (event: string, message: string) => void,
  *   receive: (event: string, callback: (data: string) => void) => void,
  *   disconnect: () => void
  * }>} A client stream object for interacting with the server.
  */
-function createClientStream(region) {
-  return new Promise((resolve, reject) => {
-    const WEBSOCKET_URL = servers[region];
-    const socket = new WebSocket(WEBSOCKET_URL);
+function createClientStream({ region, id, token }) {
+  const WEBSOCKET_URL = servers[region];
+  const socket = new WebSocket(`${WEBSOCKET_URL}?id=${id}`);
 
-    socket.onerror = (error) => {
-      console.error("WebSocket error:", error);
-      reject(error);
-    };
+  socket.onerror = (error) => {
+    throw error;
+  };
 
-    socket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === "auth_error") {
-          console.error(`Auth error: ${data.message}`);
-          reject(new Error(data.message));
-        } else if (data.type === "connection_id") {
-          resolve({
-            id: data.id,
-            authenticate(token) {
-              socket.send(JSON.stringify({ type: "authenticate", token }));
-            },
-            receive(event, callback) {
-              socket.addEventListener("message", (messageEvent) => {
-                const data = JSON.parse(messageEvent.data);
-                if (data.type === "message" && data.event === event) {
-                  callback(data.payload);
-                }
-              });
-            },
-            send(event, message) {
-              socket.send(
-                JSON.stringify({ type: "emit_event", data: { event, message } })
-              );
-            },
-            disconnect: socket.close,
-          });
+  socket.onmessage = (messageEvent) => {
+    const data = JSON.parse(messageEvent.data);
+    if (data.type === "error") {
+      throw new Error(`WebSocket error: ${data.message}`);
+    }
+  };
+
+  socket.onopen = () => {
+    socket.send(JSON.stringify({ type: "authenticate", token }));
+  };
+
+  return {
+    receive(event, callback) {
+      socket.addEventListener("message", (messageEvent) => {
+        const data = JSON.parse(messageEvent.data);
+        if (data.type === "message" && data.event === event) {
+          callback(data.payload);
         }
-      } catch (err) {
-        console.error(`Unexpected error: ${err}`);
-      }
-    };
-  });
+      });
+    },
+    disconnect: socket.close,
+  };
 }
 
 /**

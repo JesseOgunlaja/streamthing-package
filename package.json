@@ -1,6 +1,6 @@
 {
   "name": "streamthing",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "WebSocket platform for Node JS",
   "main": "index.js",
   "scripts": {

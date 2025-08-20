@@ -1,10 +1,4 @@
-const CryptoJS = require("crypto-js");
-const { io } = require("socket.io-client");
 const { SignJWT } = require("jose");
-
-function hashString(value) {
-  return CryptoJS.SHA256(value).toString();
-}
 
 async function encodeJWT(payload, secretKey, duration) {
   const secret = new TextEncoder().encode(secretKey);
@@ -18,7 +12,9 @@ async function encodeJWT(payload, secretKey, duration) {
 }
 
 const servers = {
-  eus: "https://eus.streamthing.dev",
+  usw: "wss://usw.streamthing.dev",
+  us3: "wss://us3.streamthing.dev",
+  eus: "wss://eus.streamthing.dev",
 };
 
 /**
@@ -27,14 +23,16 @@ const servers = {
  * @param {string} config.id - The unique identifier for the server.
  * @param {string} config.channel - The channel to join.
  * @param {string} config.password - The password for authentication.
- * @param {string} config.socketID - The socket ID for authentication.
+ * @param {string} config.socketId - The socket ID for authentication.
  * @returns {Promise<string>} The JWT token.
+ * @throws {Error} If called in a browser environment.
  */
-async function createToken({ id, channel, password, socketID }) {
+async function createToken({ id, channel, password, socketId }) {
   if (typeof window !== "undefined") {
     throw new Error("Can only create token on the server");
   }
-  return await encodeJWT({ id, channel }, `${socketID}-${password}`, 5);
+
+  return await encodeJWT({ id, channel }, `${socketId}-${password}`, 5);
 }
 
 /**
@@ -43,94 +41,89 @@ async function createToken({ id, channel, password, socketID }) {
  * @returns {Promise<{
  *   id: string,
  *   authenticate: (token: string) => void,
- *   receive: (event: string, callback: (data: unknown) => unknown) => void,
+ *   send: (event: string, message: string) => void,
+ *   receive: (event: string, callback: (data: string) => void) => void,
  *   disconnect: () => void
- * }>}
+ * }>} A client stream object for interacting with the server.
  */
 function createClientStream(region) {
   return new Promise((resolve, reject) => {
     const WEBSOCKET_URL = servers[region];
-    const socket = io(WEBSOCKET_URL, {
-      transports: ["websocket", "polling"],
-    });
+    const socket = new WebSocket(WEBSOCKET_URL);
 
-    socket.on("connect", () => {
-      resolve({
-        id: socket.id,
-        authenticate(token) {
-          socket.emit("authenticate", token);
-        },
-        receive(event, callback) {
-          socket.on(hashString(event), callback);
-        },
-        disconnect() {
-          socket.disconnect();
-        },
-      });
-    });
-
-    socket.on("auth_error", (error) => {
-      console.error(`Auth error: ${error.message}`);
+    socket.onerror = (error) => {
+      console.error("WebSocket error:", error);
       reject(error);
-    });
+    };
 
-    socket.on("connect_error", (error) => {
-      console.error("Connection failed:", error.message);
-      reject(error);
-    });
+    socket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "auth_error") {
+          console.error(`Auth error: ${data.message}`);
+          reject(new Error(data.message));
+        } else if (data.type === "connection_id") {
+          resolve({
+            id: data.id,
+            authenticate(token) {
+              socket.send(JSON.stringify({ type: "authenticate", token }));
+            },
+            receive(event, callback) {
+              socket.addEventListener("message", (messageEvent) => {
+                const data = JSON.parse(messageEvent.data);
+                if (data.type === "message" && data.event === event) {
+                  callback(data.payload);
+                }
+              });
+            },
+            send(event, message) {
+              socket.send(
+                JSON.stringify({ type: "emit_event", data: { event, message } })
+              );
+            },
+            disconnect: socket.close,
+          });
+        }
+      } catch (err) {
+        console.error(`Unexpected error: ${err}`);
+      }
+    };
   });
 }
 
 /**
- * Creates a server stream for sending and optionally receiving messages.
+ * Creates a server stream for sending messages.
+ * ONLY TO BE USED ON THE SERVER.
  * @param {Object} config - Configuration object for the server stream.
  * @param {string} config.id - The unique identifier for the server.
  * @param {string} config.region - The region of the server to connect to.
  * @param {string} config.channel - The channel to join.
  * @param {string} config.password - The password for authentication.
- * @param {boolean} [config.receiving] - Whether the server should also receive messages.
  * @returns {{
- *   send: (event: string, msg: string) => Promise<void>,
- *   receive?: (event: string, callback: (data: unknown) => unknown) => void,
- *   disconnect?: () => void
- * }} An object with methods to send messages and optionally receive messages.
- * @throws {Error} Throws an error if called in a browser environment.
+ *   send: (event: string, message: string) => Promise<void>,
+ * }} An object with methods to send messages to the server.
+ * @throws {Error} If called in a browser environment.
  */
 function createServerStream(config) {
   if (typeof window !== "undefined") {
     throw new Error("Can only create server stream on the server");
   }
 
-  const { id, password, region, channel } = config;
-  const WEBSOCKET_URL = servers[region];
+  const { channel, id, region, password } = config;
+  const WEBSOCKET_URL = servers[region].replace("wss", "https");
 
-  /**
-   * Sends a message to a specific event.
-   * @param {string} event - The event name to send the message to.
-   * @param {string} msg - The message to send.
-   * @returns {Promise<void>} A promise that resolves when the message is sent.
-   */
-  const send = async (event, msg) => {
-    const res = await fetch(`${WEBSOCKET_URL}/emit-event`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        id,
-        channel,
-        event,
-        msg,
-        password,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      console.error(`An error occurred. Request Body: ${JSON.stringify(data)}`);
-    }
+  return {
+    async send(event, message) {
+      const res = await fetch(`${WEBSOCKET_URL}/emit-message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, channel, event, message, password }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) console.error(`An error occurred: ${JSON.stringify(data)}`);
+    },
   };
-
-  return { send };
 }
 
 module.exports = {

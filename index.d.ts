@@ -1,34 +1,33 @@
 type CreateTokenConfig = {
-  channel: string;
-  password: string;
+	channel: string;
+	password: string;
 };
 
 export async function createToken(config: CreateTokenConfig): Promise<string>;
 
 type ClientStream = {
-  receive(event: string, callback: (data: string) => unknown): void;
-  disconnect(): void;
+	receive(event: string, callback: (data: string) => unknown): void;
+	disconnect(): void;
 };
 
 type CreateClientStreamConfig = {
-  region: string;
-  id: string;
-  token: string;
+	region: string;
+	id: string;
+	token: string;
 };
 
 export function createClientStream(
-  config: CreateClientStreamConfig
-): ClientStream {}
+	config: CreateClientStreamConfig,
+): ClientStream;
 
 type ServerStreamConfig = {
-  id: string;
-  region: string;
-  channel: string;
-  password: string;
+	id: string;
+	region: string;
+	password: string;
 };
 
 type ServerStream = {
-  send(event: string, msg: string): Promise<void>;
+	send(channel: string, event: string, msg: string): void;
 };
 
-export function createServerStream(config: ServerStreamConfig): ServerStream {}
+export function createServerStream(config: ServerStreamConfig): ServerStream;

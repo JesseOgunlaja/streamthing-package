@@ -1,0 +1,17 @@
+name: Publish to NPM
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Publish to NPM
+        uses: actions/npm-publish@v4
+        with:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -11,6 +11,6 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Publish to NPM
-        uses: actions/npm-publish@v4
+        uses: JS-DevTools/npm-publish@v4
         with:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

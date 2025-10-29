@@ -21,7 +21,6 @@ jobs:
         run: |
           NEW_VERSION=$(node -p "require('./package.json').version")
           OLD_VERSION=$(npm view streamthing version || echo "0.0.0")
-          echo "Old version: $OLD_VERSION, New version: $NEW_VERSION"
           if [ "$NEW_VERSION" != "$OLD_VERSION" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else

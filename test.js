@@ -4,25 +4,25 @@ const {
 	createToken,
 } = require("./index.js");
 
-const { TEST_SERVER_ID, TEST_SERVER_PASSWORD, TEST_SERVER_REGION } =
-	process.env;
+console.log(process.env);
+const { SERVER_ID, SERVER_PASSWORD, SERVER_REGION } = process.env;
 const CHANNEL = "test-channel";
 
 async function runTest() {
 	const token = await createToken({
 		channel: CHANNEL,
-		password: TEST_SERVER_PASSWORD,
+		password: SERVER_PASSWORD,
 	});
 	const client = createClientStream({
-		region: TEST_SERVER_REGION,
-		id: TEST_SERVER_ID,
+		region: SERVER_REGION,
+		id: SERVER_ID,
 		token,
 	});
 
 	const server = createServerStream({
-		id: TEST_SERVER_ID,
-		region: TEST_SERVER_REGION,
-		password: TEST_SERVER_PASSWORD,
+		id: SERVER_ID,
+		region: SERVER_REGION,
+		password: SERVER_PASSWORD,
 	});
 	server.send(CHANNEL, "message", "test-success");
 

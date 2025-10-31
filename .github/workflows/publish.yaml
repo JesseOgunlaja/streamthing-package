@@ -50,9 +50,9 @@ jobs:
         - name: Run integration tests
           if: ${{needs.check-version.outputs.tag == 'latest'}}
           env:
-            SERVER_ID: ${{ secrets.SERVER_ID }}
-            SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
-            SERVER_REGION: ${{ vars.SERVER_REGION }}
+            SERVER_ID: ${{ secrets.TEST_SERVER_ID }}
+            SERVER_PASSWORD: ${{ secrets.TEST_SERVER_PASSWORD }}
+            SERVER_REGION: ${{ vars.TEST_SERVER_REGION }}
           run: npm install &&  node test.js
 
         - name: Publish to NPM

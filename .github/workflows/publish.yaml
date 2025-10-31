@@ -59,4 +59,4 @@ jobs:
           uses: JS-DevTools/npm-publish@v4
           with:
             token: ${{ secrets.NPM_TOKEN }}
-            tag: ${{ steps.version.outputs.tag }}
+            tag: ${{ needs.check-version.outputs.tag }}

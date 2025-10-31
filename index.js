@@ -11,7 +11,7 @@ async function encodeJWT(payload, secretKey, duration) {
 	return jwt;
 }
 
-const { CUSTOM_HOST } = process.env;
+const { STREAMTHING_CUSTOM_HOST: CUSTOM_HOST } = process.env;
 
 const servers = {
 	usw: CUSTOM_HOST || "wss://usw.streamthing.dev",
